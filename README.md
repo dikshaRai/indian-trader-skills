@@ -36,6 +36,37 @@ For reading filing PDFs: `brew install poppler`.
 | During market | `/loop 15m /trader-scanner-india orb --index NIFTY50` |
 | After 22:00 | `/trader-news-india --index NIFTY50` (NSE's filing feed resets at midnight) |
 
+## Automation (runs on its own, Mon-Fri)
+
+`automation/trader_day.py` runs the skills on a schedule, merges each
+scanner hit with its news (holding break + agreeing news first), writes a
+Markdown report and shows a Mac notification. It does not need Claude open
+and never logs in or places orders.
+
+| Time (IST) | Job | Report |
+| --- | --- | --- |
+| 08:35 | reminder: notifies only if today's Zerodha login is missing | |
+| 08:45 | premarket: Nifty 50 news sentiment + Nifty 100 daily setups | `HHMM-premarket.md` |
+| 09:40, 10:10, 10:40, 11:10, 12:10, 13:10, 14:10 | orb: Nifty 50 opening-range hits + news on each | `HHMM-orb.md` |
+| 22:15 | evening: the day's Nifty 100 filings before NSE's feed resets | `HHMM-evening.md` |
+
+Reports land in `<data folder>/trader/reports/YYYY-MM-DD/`, and
+`trader/reports/latest.md` is always the newest.
+
+Install the schedule yourself (it adds launchd jobs to your Mac), pointing
+it at the folder that holds `trader/`:
+
+```bash
+./automation/schedule.sh install "/path/to/your/trading folder"
+./automation/schedule.sh status
+./automation/schedule.sh remove        # stop everything
+```
+
+Run any job by hand: `python3 automation/trader_day.py orb --data "/path/to/folder"`.
+The only manual step left is the morning `kite_login.py`. The Mac must be
+awake for jobs to run (a missed job runs when it wakes), and its time zone
+must be IST.
+
 ## Common commands
 
 ```bash
