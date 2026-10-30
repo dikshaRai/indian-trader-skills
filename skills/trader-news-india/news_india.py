@@ -424,7 +424,7 @@ def ist(t):
     return t.astimezone(IST).strftime("%d-%b %H:%M") if t else "  time n/a  "
 
 
-def render(items, moves, errors, watch, names, now, move_pct):
+def render(items, moves, errors, watch, names, now, move_pct, all_items=None):
     lines = ["Indian market news, checked %s IST, tickers: %s" % (now.astimezone(IST).strftime("%d-%b-%Y %H:%M"), " ".join(watch))]
     for s in watch:
         if s not in names:
@@ -443,7 +443,7 @@ def render(items, moves, errors, watch, names, now, move_pct):
     if not items:
         lines.append("Nothing new.")
     if items:
-        summary = sentiment_summary(items, watch)
+        summary = sentiment_summary(all_items if all_items is not None else items, watch)
         lines.append("Sentiment by stock (net score; ▲ positive ▼ negative · neutral items):")
         for s, (net, p, n, z) in summary:
             mood = "positive" if net > 0 else "negative" if net < 0 else "mixed/neutral"
@@ -526,6 +526,7 @@ def main(argv=None):
                 continue
         capped.append(it)
     items = capped
+    all_items = items  # the per-stock table always covers every item
     if a.sentiment:
         items = [it for it in items if it["kind"] == "filing" or it["sentiment"] == a.sentiment]
     moves = {} if a.no_moves else collect_moves(fetcher, watch, errors)
@@ -535,7 +536,7 @@ def main(argv=None):
         print(json.dumps({"checked": now.isoformat(), "tickers": watch, "moves": moves,
                           "items": out, "errors": errors}, indent=2))
     else:
-        print(render(items, moves, errors, watch, names, now, a.move_pct))
+        print(render(items, moves, errors, watch, names, now, a.move_pct, all_items))
 
     if not a.dry_run:
         remember(items, state, now)
