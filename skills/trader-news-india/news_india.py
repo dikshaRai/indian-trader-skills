@@ -119,7 +119,7 @@ SENTIMENT = [
     (-1, r"^\s*(?:sell|reduce)\b[^.;]{0,60}?\btarget\b"),
     (+2, r"\b(?:bags?|wins?|won|secures?|receive[sd]?|bagging)\b[^.,;]{0,30}?\b(?:order|contract|deal|LoA)s?\b|\border win"),
     (+2, r"\b(?:USFDA|FDA|DCGI|EU|CDSCO|regulatory)\b[^.,;]{0,25}?\bapprov|\bapproved in the U\.?S\.?|\bgets? (?:nod|approval|clearance)\b|\bVAI\b"),
-    (+1, r"\brecord (?:high|profit|revenue|sales|quarter)\b|\b(?:52|fifty-two)[- ]week high\b|\ball[- ]time high\b|\blifetime high\b"),
+    (+1, r"\brecord (?:high|profits?|revenues?|sales|quarter|volumes?|deliveries|orders?|order book)\b|\b(?:52|fifty-two)[- ]week high\b|\ball[- ]time high\b|\blifetime high\b"),
     (+1, r"\bturnaround\b|\bstrong (?:quarter|results|numbers|growth|show|demand)\b|\brobust\b|\bupbeat\b|\bbullish\b"),
     (+1, r"\brall(?:y|ies|ied)\b|\bsoars?\b|\bzooms?\b|\bskyrockets?\b|\bupper circuit\b|\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:jump|surge|gain|climb|rise|rose|advance)(?:s|ed|d)?\b|\b(?:jump|surge|gain|climb|rise|rally|zoom|soar|advance)(?:s|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
     (-1, r"\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:slip|fall|fell|drop|decline|slide|dip|tumble)(?:s|ped|ed|d|en)?\b|\b(?:slip|fall|drop|decline|slide|dip|tumble|crack|plunge|slump)(?:s|ped|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
