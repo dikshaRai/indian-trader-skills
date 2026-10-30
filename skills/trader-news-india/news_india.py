@@ -143,7 +143,7 @@ def sentiment(text):
     """(score, label, matched phrases). label: positive / negative / neutral."""
     # "profit up 25% despite cost pressures": the despite-clause is the
     # headwind already overcome, so it does not count against the news
-    rest = re.sub(r"\b(?:despite|in spite of|notwithstanding)\b[^.;]*", " ", text, flags=re.I)
+    rest = re.sub(r"\b(?:despite|in spite of|notwithstanding)\b[^.;]*|\bamid(?:st)?\s+(?:[\w-]+\s+){0,3}?(?:cost|costs|pressures?|headwinds?|competition|volatility|inflation)\b[^.;]*", " ", text, flags=re.I)
     score, hits = 0, []
     for w, rx in _SENT:
         for m in rx.finditer(rest):
