@@ -1,11 +1,12 @@
 # Indian Trader Skills for Claude
 
-Two Claude Code skills for the Indian stock market (NSE), written with
+Three Claude Code skills for the Indian stock market (NSE), written with
 Claude. Standard-library Python 3, nothing to `pip install`.
 
 | Skill | What it does |
 | --- | --- |
 | [`trader-news-india`](skills/trader-news-india/SKILL.md) | NSE corporate filings, Indian news headlines (Google News India) and the % move vs previous close, for your stocks or a whole index. Shows only what is new, in IST, tags each item, flags market-moving filings with `!`, and scores **sentiment** (▲ positive / ▼ negative / · neutral, with the reason) plus a per-stock sentiment table. A **relevance filter** keeps only headlines that name the company and drops market roundups. |
+| [`trader-day-india`](skills/trader-day-india/SKILL.md) | **The trading-day agent.** One command runs the routine: pre-market brief, opening-range scan + news on every hit (holding break + agreeing news first), or evening filings. Claude reviews the results, fixes wrong sentiment labels, reads important filing PDFs and writes a short brief. Can run on Claude's scheduled tasks. |
 | [`trader-scanner-india`](skills/trader-scanner-india/SKILL.md) | Chart scanner: daily setups (20-day breakout/breakdown, bull flag, reclaim/lost 20-day average, oversold, oversold bounce, overbought) and intraday opening-range breakouts up and down from 9:15 IST. Data from **Zerodha Kite Connect** (after the daily login) or free Yahoo data. Writes `trader/watchlist.json`, which the news skill reads. |
 
 Both are education and tooling, not financial advice. Neither places,
@@ -38,7 +39,7 @@ For reading filing PDFs: `brew install poppler`.
 
 ## Automation (runs on its own, Mon-Fri)
 
-`automation/trader_day.py` runs the skills on a schedule, merges each
+`skills/trader-day-india/trader_day.py` (the engine of `/trader-day-india`) can also run without Claude on a macOS schedule. It runs the skills, merges each
 scanner hit with its news (holding break + agreeing news first), writes a
 Markdown report and shows a Mac notification. It does not need Claude open
 and never logs in or places orders.
@@ -62,7 +63,7 @@ it at the folder that holds `trader/`:
 ./automation/schedule.sh remove        # stop everything
 ```
 
-Run any job by hand: `python3 automation/trader_day.py orb --data "/path/to/folder"`.
+Run any job by hand: `/trader-day-india orb` in Claude, or `python3 ~/.claude/skills/trader-day-india/trader_day.py orb --data "/path/to/folder" --force`.
 The only manual step left is the morning `kite_login.py`. The Mac must be
 awake for jobs to run (a missed job runs when it wakes), and its time zone
 must be IST.

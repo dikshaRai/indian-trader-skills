@@ -49,7 +49,7 @@ case "$1" in
     DATA=${2:?usage: ./schedule.sh install "/path/to/data folder"}
     DATA=$(cd "$DATA" && pwd)
     mkdir -p "$HOME_DIR/logs" "$AGENTS"
-    cp "$HERE/trader_day.py" "$HOME_DIR/trader_day.py"
+    cp "$HERE/../skills/trader-day-india/trader_day.py" "$HOME_DIR/trader_day.py"
     job reminder  reminder  "08:35"
     job premarket premarket "08:45"
     job orb       orb       "09:40 10:10 10:40 11:10 12:10 13:10 14:10"
