@@ -5,7 +5,7 @@ Claude. Standard-library Python 3, nothing to `pip install`.
 
 | Skill | What it does |
 | --- | --- |
-| [`trader-news-india`](skills/trader-news-india/SKILL.md) | NSE corporate filings, Indian news headlines (Google News India) and the % move vs previous close, for your stocks or a whole index. Shows only what is new, in IST, tags each item and flags market-moving filings with `!`. |
+| [`trader-news-india`](skills/trader-news-india/SKILL.md) | NSE corporate filings, Indian news headlines (Google News India) and the % move vs previous close, for your stocks or a whole index. Shows only what is new, in IST, tags each item, flags market-moving filings with `!`, and scores **sentiment** (▲ positive / ▼ negative / · neutral, with the reason) plus a per-stock sentiment table. |
 | [`trader-scanner-india`](skills/trader-scanner-india/SKILL.md) | Chart scanner: daily setups (20-day breakout/breakdown, bull flag, reclaim/lost 20-day average, oversold, oversold bounce, overbought) and intraday opening-range breakouts up and down from 9:15 IST. Data from **Zerodha Kite Connect** (after the daily login) or free Yahoo data. Writes `trader/watchlist.json`, which the news skill reads. |
 
 Both are education and tooling, not financial advice. Neither places,
@@ -43,6 +43,7 @@ For reading filing PDFs: `brew install poppler`.
 /trader-news-india RELIANCE TCS HDFCBANK
 /trader-news-india --index NIFTY50                 # or NIFTYNEXT50, NIFTY100
 /trader-news-india --index NIFTY100 --no-headlines --no-moves   # filings only, seconds
+/trader-news-india --index NIFTY50 --sentiment negative        # only negative headlines
 
 # Scanner
 /trader-scanner-india daily --index NIFTY500

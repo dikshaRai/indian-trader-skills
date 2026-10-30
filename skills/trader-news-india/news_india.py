@@ -92,6 +92,68 @@ KEYWORDS = [
     ("macro", r"\bNifty\b|\bSensex\b|\brepo rate\b|\bMPC\b|\binflation\b|\bCPI\b|\bGDP\b|\bFII|\bFPI|\bDII|\brupee\b|\bbudget\b|\bcrude\b"),
 ]
 
+# Headline sentiment: rule-based, for the company the item is about. Each
+# (weight, phrase) that matches adds to the score; the matched phrases are
+# kept so a reader can see why. Mixed phrases come first so "loss narrows"
+# scores positive before the plain "loss" rule fires.
+_UP = r"(?:rise[sn]?|rose|jump(?:s|ed)?|surge[sd]?|soar(?:s|ed)?|climb(?:s|ed)?|up|grow(?:s|n)?|grew|gain(?:s|ed)?|increase[sd]?|doubles?|higher|beats?)"
+_DOWN = r"(?:fall(?:s|en)?|fell|drop(?:s|ped)?|decline[sd]?|slump(?:s|ed)?|plunge[sd]?|tumble[sd]?|sink(?:s)?|sank|slide[sd]?|down|lower|shrink(?:s)?|halve[sd]?|dip(?:s|ped)?)"
+SENTIMENT = [
+    # mixed phrases, checked first and consumed so their words do not score twice
+    (+1, r"\bloss(?:es)?\s+(?:narrow|shrink|reduce|cut)\w*|\bnarrow(?:s|ed|er)?\s+(?:net\s+)?loss"),
+    (-1, r"\bloss(?:es)?\s+(?:widen|deepen|jump|rise|surge|swell)\w*|\bwiden(?:s|ed)?\s+(?:net\s+)?loss"),
+    (+1, r"\b(?:recover|rebound|bounce)\w*\b[^.,;]{0,25}?\b(?:52|fifty-two)[- ]week low"),
+    (+1, r"\b(?:profit|earnings|revenue|sales|income|ebitda|margin|pat)s?\b[^.,;]{0,25}?\b" + _UP + r"\b"),
+    (-1, r"\b(?:profit|earnings|revenue|sales|income|ebitda|margin|pat)s?\b[^.,;]{0,25}?\b" + _DOWN + r"\b"),
+    (+1, r"\b(?:rise|jump|surge|growth|increase|gain)s?\s+in\s+(?:net\s+|consolidated\s+|standalone\s+)?(?:profit|earnings|revenue|sales|income|ebitda|pat)\b"),
+    (-1, r"\b(?:fall|drop|decline|dip|slump)s?\s+in\s+(?:net\s+|consolidated\s+|standalone\s+)?(?:profit|earnings|revenue|sales|income|ebitda|pat)\b"),
+    (+1, r"\b(?:target|price target|target price)s?\b[^.,;]{0,20}?\b(?:raise[sd]?|hike[sd]?|up(?:ped)?|increase[sd]?)\b|\b(?:raise[sd]?|hike[sd]?)\b[^.,;]{0,15}?\btarget"),
+    (-1, r"\b(?:target|price target|target price)s?\b[^.,;]{0,20}?\b(?:cuts?|slashe[sd]|lower(?:ed)?|reduce[sd]?|trim(?:s|med)?)\b|\b(?:cuts?|slashe[sd]|lower(?:s|ed)?|trim(?:s|med)?)\b[^.,;]{0,15}?\btarget"),
+    # a cost going up is not good news: consume it so "jumps" below does not fire
+    (0, r"\b(?:cost|costs|bill|expenses?|fuel|input|raw material|interest)\b[^.,;]{0,15}?\b" + _UP + r"\b"),
+    # positive
+    (+2, r"\bbeats? (?:estimates|expectations|street|forecasts?)\b|\btops? estimates\b|\bbetter[- ]than[- ]expected\b"),
+    (+2, r"\bupgrade[sd]?\b|\bupgrade to buy\b"),
+    (0, r"\bbuy,? sell,? (?:or )?hold\b|\bbuy or sell\b"),  # list articles, not a call
+    (+1, r"\b(?:buy|outperform|overweight|accumulate) (?:rating|call)\b|\brate[sd]? (?:buy|outperform)\b|^\s*(?:buy|accumulate|add)\b[^.;]{0,60}?\btarget\b|\bbrokerages? (?:say|says|recommend) .?buy"),
+    (-1, r"^\s*(?:sell|reduce)\b[^.;]{0,60}?\btarget\b"),
+    (+2, r"\b(?:bags?|wins?|won|secures?|receive[sd]?|bagging)\b[^.,;]{0,30}?\b(?:order|contract|deal|LoA)s?\b|\border win"),
+    (+2, r"\b(?:USFDA|FDA|DCGI|EU|CDSCO|regulatory)\b[^.,;]{0,25}?\bapprov|\bapproved in the U\.?S\.?|\bgets? (?:nod|approval|clearance)\b|\bVAI\b"),
+    (+1, r"\brecord (?:high|profit|revenue|sales|quarter)\b|\b(?:52|fifty-two)[- ]week high\b|\ball[- ]time high\b|\blifetime high\b"),
+    (+1, r"\bturnaround\b|\bstrong (?:quarter|results|numbers|growth|show|demand)\b|\brobust\b|\bupbeat\b|\bbullish\b"),
+    (+1, r"\brall(?:y|ies|ied)\b|\bsoars?\b|\bzooms?\b|\bskyrockets?\b|\bupper circuit\b|\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:jump|surge|gain|climb|rise|rose|advance)(?:s|ed|d)?\b|\b(?:jump|surge|gain|climb|rise|rally|zoom|soar|advance)(?:s|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
+    (-1, r"\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:slip|fall|fell|drop|decline|slide|dip|tumble)(?:s|ped|ed|d|en)?\b|\b(?:slip|fall|drop|decline|slide|dip|tumble|crack|plunge|slump)(?:s|ped|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
+    (+1, r"\bbuyback\b|\bbonus (?:issue|shares)\b|\bspecial dividend\b|\bdebt[- ]free\b|\brating upgrade\b"),
+    # negative
+    (-2, r"\bmiss(?:es|ed)? (?:estimates|expectations|street|forecasts?)\b|\bbelow (?:estimates|expectations)\b|\bworse[- ]than[- ]expected\b|\bdisappoint"),
+    (-2, r"\bdowngrade[sd]?\b|\brating (?:cut|downgrade)\b"),
+    (-1, r"\b(?:sell|underperform|underweight|reduce) (?:rating|call)\b|\brate[sd]? (?:sell|underperform)\b"),
+    (-2, r"\bfraud\b|\braid(?:s|ed)?\b|\bprobe\b|\binvestigation\b|\bshow[- ]cause\b|\bpenalt(?:y|ies)\b|\bfined?\b|\bSEBI (?:order|bars|ban)"),
+    (-2, r"\bwarning letter\b|\bimport alert\b|\bOAI\b|\brecall(?:s|ed)?\b|\bdefault(?:s|ed)?\b|\binsolvency\b|\bbankrupt"),
+    (-1, r"\b(?:52|fifty-two)[- ]week low\b|\blower circuit\b|\bASM\b|\bGSM\b|\bF&O ban\b"),
+    (-1, r"\b(?:hits?|dents?|hurts?|squeezes?)\s+(?:profit|profitability|margins?|earnings|bottom line)\b"),
+    (-1, r"\bslump(?:s|ed)?\b|\bplunge[sd]?\b|\btumble[sd]?\b|\bcrash(?:es|ed)?\b|\bsinks?\b|\btanks?\b|\bsell-?off\b"),
+    (-1, r"\bresign(?:s|ed|ation)?\b|\bsteps? down\b|\bquits?\b|\bexits?\b(?= as)"),
+    (-1, r"\bweak (?:quarter|results|numbers|demand|show)\b|\bpressures?\b|\bheadwinds?\b|\bwarns?\b|\bconcerns?\b|\bbearish\b|\blawsuit\b|\bsued\b|\bmis-?selling\b"),
+]
+_SENT = [(w, re.compile(p, re.I)) for w, p in SENTIMENT]
+
+
+def sentiment(text):
+    """(score, label, matched phrases). label: positive / negative / neutral."""
+    # "profit up 25% despite cost pressures": the despite-clause is the
+    # headwind already overcome, so it does not count against the news
+    rest = re.sub(r"\b(?:despite|in spite of|notwithstanding)\b[^.;]*", " ", text, flags=re.I)
+    score, hits = 0, []
+    for w, rx in _SENT:
+        for m in rx.finditer(rest):
+            if w:
+                score += w
+                hits.append(("+" if w > 0 else "-") + m.group(0).strip().lower())
+        rest = rx.sub(" ", rest)  # each word scores once
+    label = "positive" if score > 0 else "negative" if score < 0 else "neutral"
+    return score, label, hits
+
 
 # ---------------------------------------------------------------- fetching
 
@@ -276,7 +338,22 @@ def tag(items):
     for it in items:
         text = it["title"] + " " + it["detail"]
         it["tags"] = [name for name, pat in KEYWORDS if re.search(pat, text, re.I)]
+        it["sentiment_score"], it["sentiment"], it["sentiment_why"] = sentiment(text)
     return items
+
+
+SENT_MARK = {"positive": "▲", "negative": "▼", "neutral": "·"}
+
+
+def sentiment_summary(items, watch):
+    """Per stock: (net score, positives, negatives, neutrals), stocks with news only."""
+    out = {}
+    for it in items:
+        net, p, n, z = out.get(it["symbol"], (0, 0, 0, 0))
+        s = it["sentiment"]
+        out[it["symbol"]] = (net + it["sentiment_score"], p + (s == "positive"),
+                             n + (s == "negative"), z + (s == "neutral"))
+    return sorted(out.items(), key=lambda kv: (-kv[1][0], kv[0]))
 
 
 def fingerprint(it):
@@ -365,11 +442,21 @@ def render(items, moves, errors, watch, names, now, move_pct):
     lines.append("")
     if not items:
         lines.append("Nothing new.")
+    if items:
+        summary = sentiment_summary(items, watch)
+        lines.append("Sentiment by stock (net score; ▲ positive ▼ negative · neutral items):")
+        for s, (net, p, n, z) in summary:
+            mood = "positive" if net > 0 else "negative" if net < 0 else "mixed/neutral"
+            lines.append("  %-12s %+3d  %-13s ▲%d ▼%d ·%d" % (s, net, mood, p, n, z))
+        lines.append("")
     for it in items:
         mark = "!" if it["important"] else " "
         kind = "FILING" if it["kind"] == "filing" else "news  "
         tags = (" [" + ", ".join(it["tags"]) + "]") if it["tags"] else ""
-        lines.append("%s %s  %-10s %s  %s (%s)%s" % (mark, ist(it["time"]), it["symbol"], kind, it["title"], it["source"], tags))
+        sm = SENT_MARK[it["sentiment"]]
+        lines.append("%s %s %s  %-10s %s  %s (%s)%s" % (mark, sm, ist(it["time"]), it["symbol"], kind, it["title"], it["source"], tags))
+        if it["sentiment_why"]:
+            lines.append("        sentiment %+d: %s" % (it["sentiment_score"], ", ".join(it["sentiment_why"])))
         lines.append("      " + it["link"])
     quiet = [s for s in watch if not any(i["symbol"] == s for i in items)]
     if items and quiet and len(watch) > 20:
@@ -397,6 +484,8 @@ def main(argv=None):
     ap.add_argument("--no-moves", action="store_true", help="skip the price line")
     ap.add_argument("--move-pct", type=float, default=MOVE_PCT)
     ap.add_argument("--max-per-ticker", type=int, default=15, help="cap headlines per ticker")
+    ap.add_argument("--sentiment", choices=["positive", "negative", "neutral"],
+                    help="show only items with this sentiment (filings are always kept)")
     ap.add_argument("--offline", metavar="DIR")
     ap.add_argument("--now", help="ISO time, for reproducible runs")
     ap.add_argument("--dry-run", action="store_true", help="do not update the state file")
@@ -437,6 +526,8 @@ def main(argv=None):
                 continue
         capped.append(it)
     items = capped
+    if a.sentiment:
+        items = [it for it in items if it["kind"] == "filing" or it["sentiment"] == a.sentiment]
     moves = {} if a.no_moves else collect_moves(fetcher, watch, errors)
 
     if a.json:

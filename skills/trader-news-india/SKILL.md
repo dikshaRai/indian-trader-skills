@@ -77,6 +77,37 @@ scripts and are deliberately not touched.
 - **No predictions.** Report what was published and the move. Never say what
   the stock will do next.
 
+## Sentiment
+
+Every item gets a rule-based sentiment score: ▲ positive, ▼ negative,
+· neutral, with the phrases that produced it on the next line
+(`sentiment -3: -target price cuts, -miss estimates`). The output opens
+with a per-stock table: net score and how many ▲ / ▼ / · items each stock
+has, most positive first. `--sentiment negative` (or positive / neutral)
+shows only those headlines; filings are always kept. `--json` carries
+`sentiment`, `sentiment_score` and `sentiment_why` per item.
+
+What it scores: results direction (profit/revenue up or down, "rise in net
+profit", loss narrows or widens), beats or misses estimates, upgrades and
+downgrades, target raised or cut/trimmed, buy/sell calls, order wins,
+regulatory approvals (USFDA, VAI), record or 52-week highs and lows,
+share-price moves ("shares jump 6%", "falls 3%"), buybacks and bonus,
+resignations, probes, penalties, fraud, defaults, warning letters, ASM/GSM.
+Cost increases ("fuel bill jumps") are not counted as positive, and a
+"despite ..." clause is ignored.
+
+How Claude uses it:
+- It is a first pass for sorting, not a verdict. Read the headline: the
+  rules miss sarcasm, questions ("buy or sell?"), and stories about another
+  company that mention this one. Correct an obviously wrong label in the
+  brief and say so.
+- Lead the brief with the per-stock table, then the strongest ▼ items (they
+  are the risks to a long setup) and ▲ items.
+- Opinion pieces, single unknown sources and "stocks to watch" lists stay
+  neutral in weight even if the score says otherwise.
+- Never turn sentiment into advice: "news is mostly negative" is a report;
+  "so sell it" is not allowed.
+
 ## Steps
 
 1. Run the check. Exit code 1 means nothing new; `--all` shows seen items,
