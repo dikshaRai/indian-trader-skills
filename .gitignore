@@ -1,0 +1,8 @@
+# Never commit credentials or local trading state
+kite.json
+*.token
+.env
+trader/
+__pycache__/
+*.pyc
+.DS_Store
