@@ -77,6 +77,22 @@ scripts and are deliberately not touched.
 - **No predictions.** Report what was published and the move. Never say what
   the stock will do next.
 
+## Relevance filter
+
+Google News matches a company name anywhere in an article, so by default
+a headline is kept only if its **title names the company**: its NSE name,
+a known alias (RIL, HUL, SBI, L&T, IndiGo, Airtel, Zomato...) or the
+symbol. Look-alike companies are excluded (ITC Hotels is not ITC, M&M
+Financial is not M&M, SBI Life is not SBI, HDFC Life is not HDFC Bank).
+Market roundups ("stocks to watch", "top laggards", Sensex/Nifty wraps,
+"10 stocks to post earnings") are dropped too. The output's last `note:`
+line says how many were dropped. `--roundups` keeps roundups, `--loose`
+turns the filter off. Filings are never filtered.
+
+If a real story about a company is missing because headlines use another
+name, add the name to `ALIASES` in `news_india.py`; a wrong look-alike goes
+in `NOT_THIS`.
+
 ## Sentiment
 
 Every item gets a rule-based sentiment score: ▲ positive, ▼ negative,

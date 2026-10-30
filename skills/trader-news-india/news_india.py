@@ -371,6 +371,78 @@ def dedupe(items):
     return out
 
 
+# ---------------------------------------------------------------- relevance
+
+# What headlines call a company when it is not its NSE name. Extend freely.
+ALIASES = {
+    "RELIANCE": ["RIL", "Reliance Industries", "Reliance"], "HINDUNILVR": ["HUL", "Hindustan Unilever"],
+    "INDIGO": ["IndiGo", "InterGlobe"], "SBIN": ["SBI", "State Bank"], "M&M": ["M&M", "Mahindra & Mahindra", "Mahindra and Mahindra"],
+    "LT": ["L&T", "Larsen"], "ETERNAL": ["Eternal", "Zomato", "Blinkit"], "TMPV": ["Tata Motors"],
+    "JIOFIN": ["Jio Financial", "JFSL"], "BHARTIARTL": ["Airtel"], "ADANIENT": ["Adani Enterprises", "AEL"],
+    "ADANIPORTS": ["Adani Ports", "APSEZ"], "DRREDDY": ["Dr Reddy", "Dr. Reddy", "DRL"], "COALINDIA": ["Coal India", "CIL"],
+    "POWERGRID": ["Power Grid", "PowerGrid"], "SHRIRAMFIN": ["Shriram Finance"], "EICHERMOT": ["Eicher", "Royal Enfield"],
+    "ULTRACEMCO": ["UltraTech"], "HINDALCO": ["Hindalco", "Novelis"], "TECHM": ["Tech Mahindra", "TechM"],
+    "HCLTECH": ["HCLTech", "HCL Tech", "HCL Technologies"], "INFY": ["Infosys"], "TCS": ["TCS", "Tata Consultancy"],
+    "NESTLEIND": ["Nestle", "Nestlé"], "BEL": ["BEL", "Bharat Electronics"], "BSE": ["BSE Ltd", "BSE shares", "BSE stock", "BSE Q"],
+    "MARUTI": ["Maruti"], "BAJAJ-AUTO": ["Bajaj Auto"], "BAJFINANCE": ["Bajaj Finance"], "BAJAJFINSV": ["Bajaj Finserv"],
+    "HDFCBANK": ["HDFC Bank"], "HDFCLIFE": ["HDFC Life"], "ICICIBANK": ["ICICI Bank"], "AXISBANK": ["Axis Bank"],
+    "KOTAKBANK": ["Kotak"], "SUNPHARMA": ["Sun Pharma"], "TATACONSUM": ["Tata Consumer"], "SBILIFE": ["SBI Life"],
+    "MAXHEALTH": ["Max Healthcare"], "APOLLOHOSP": ["Apollo Hospitals"], "JSWSTEEL": ["JSW Steel"], "TATASTEEL": ["Tata Steel"],
+    "ASIANPAINT": ["Asian Paints"], "IRCTC": ["IRCTC"], "HAL": ["HAL", "Hindustan Aeronautics"], "ONGC": ["ONGC"], "NTPC": ["NTPC"],
+}
+# Names that contain a watched company's name but are a different company.
+NOT_THIS = {
+    "ITC": r"ITC Hotels", "M&M": r"Mahindra (?:&|and) Mahindra Financial(?: Services)?|M&M Financial|M&M Fin\w*|Mahindra Finance|Mahindra Lifespace|Mahindra Holidays|Tech Mahindra", "SBIN": r"SBI Life|SBI Card|SBI Mutual|SBI MF",
+    "HDFCBANK": r"HDFC Life|HDFC AMC|HDFC Securities", "RELIANCE": r"Reliance (?:Power|Infra|Capital|Home|Communications)|Reliance Jio Platforms IPO",
+    "BAJFINANCE": r"Bajaj Finserv", "TATASTEEL": r"Tata Steel Long", "LT": r"L&T (?:Finance|Technology|Tech|Mindtree)|LTIMindtree",
+}
+# The first word alone is too common to identify a company.
+_GENERIC = {"tata", "adani", "bajaj", "hdfc", "sbi", "bharat", "hindustan", "state", "power", "coal", "asian",
+            "sun", "max", "jsw", "jio", "shriram", "mahindra", "larsen", "national", "indian", "india", "the",
+            "apollo", "bank", "life", "dr", "interglobe", "grasim", "eicher", "kotak", "axis", "icici", "tech"}
+ROUNDUP = re.compile(
+    r"\bstocks? to (?:watch|buy|sell)\b|\bstocks? in (?:focus|news)\b|\bbuzzing stocks\b|\btop (?:gainers|losers|laggards)\b|"
+    r"\blaggards\b|\bstocks today\b|\bshares? today\b,|\bq\d results(?:,| today)\b.*,.*,|\bto post earnings\b|\bset to announce\b|"
+    r"\bmarket (?:live|wrap|today)\b|\bstock market (?:today|live|highlights)\b|\bsensex\b.*\bnifty\b|\bnifty\b.*\bsensex\b|"
+    r"\b\d+\s+(?:largecap|midcap|smallcap|large-cap|mid-cap)?\s*stocks\b|\bthese \d+ stocks\b", re.I)
+
+
+def name_patterns(sym, name):
+    """Regex for headline mentions of this company: aliases, its NSE name, the symbol."""
+    words = [w for w in re.split(r"\s+", short_name(name or "")) if w]
+    forms = list(ALIASES.get(sym, []))
+    if words:
+        forms.append(" ".join(words[:2]) if len(words) > 1 else words[0])
+        if len(words[0]) >= 4 and words[0].lower().strip(".'") not in _GENERIC:
+            forms.append(words[0])
+    if re.fullmatch(r"[A-Z]{3,}", sym) and sym not in ("BSE",):
+        forms.append(sym)
+    forms = sorted({f for f in forms if f}, key=len, reverse=True)
+    return re.compile(r"(?<![\w&])(?:%s)(?![\w&])" % "|".join(re.escape(f) for f in forms), re.I)
+
+
+def relevance(items, names):
+    """Split headlines into (about the company, roundups, unrelated). Filings always count."""
+    keep, roundups, dropped = [], [], []
+    pats = {}
+    for it in items:
+        if it["kind"] == "filing":
+            keep.append(it)
+            continue
+        s = it["symbol"]
+        rx = pats.get(s) or pats.setdefault(s, name_patterns(s, names.get(s)))
+        title = it["title"]
+        excl = NOT_THIS.get(s)
+        cleaned = re.sub(excl, " ", title, flags=re.I) if excl else title
+        if not rx.search(cleaned):
+            dropped.append(it)
+        elif ROUNDUP.search(title):
+            roundups.append(it)
+        else:
+            keep.append(it)
+    return keep, roundups, dropped
+
+
 def collect(fetcher, watch, names, headlines=True, filings=True, hours=48, errors=None):
     errors = errors if errors is not None else []
     items = []
@@ -486,6 +558,8 @@ def main(argv=None):
     ap.add_argument("--max-per-ticker", type=int, default=15, help="cap headlines per ticker")
     ap.add_argument("--sentiment", choices=["positive", "negative", "neutral"],
                     help="show only items with this sentiment (filings are always kept)")
+    ap.add_argument("--loose", action="store_true", help="keep every headline, even ones that do not name the company")
+    ap.add_argument("--roundups", action="store_true", help="keep 'stocks to watch' lists and market wraps")
     ap.add_argument("--offline", metavar="DIR")
     ap.add_argument("--now", help="ISO time, for reproducible runs")
     ap.add_argument("--dry-run", action="store_true", help="do not update the state file")
@@ -517,6 +591,14 @@ def main(argv=None):
         errors.append("NSE symbol list: %s (using cache: %d symbols)" % (e, len(names)))
 
     items = collect(fetcher, watch, names, not a.no_headlines, not a.no_filings, a.hours, errors)
+    if not a.loose:
+        items, roundups, dropped = relevance(items, names)
+        if a.roundups:
+            items += roundups
+        if roundups or dropped:
+            errors.append("relevance: dropped %d headlines that do not name the company (--loose keeps them)%s" % (
+                len(dropped), "" if a.roundups else
+                "; %d market roundups / stock lists (--roundups keeps them)" % len(roundups)))
     items = select(items, state, now, a.hours, a.all)
     capped, count = [], {}
     for it in items:
