@@ -102,6 +102,9 @@ SENTIMENT = [
     # mixed phrases, checked first and consumed so their words do not score twice
     (+1, r"\bloss(?:es)?\s+(?:narrow|shrink|reduce|cut)\w*|\bnarrow(?:s|ed|er)?\s+(?:net\s+)?loss"),
     (-1, r"\bloss(?:es)?\s+(?:widen|deepen|jump|rise|surge|swell)\w*|\bwiden(?:s|ed)?\s+(?:net\s+)?loss"),
+    # past weakness or someone else's wrongdoing: consume so the words do not score
+    (0, r"\b(?:after|from)\s+(?:a\s+)?(?:[\w-]+\s+){0,2}?(?:slump|dip|decline|fall|slowdown)\b"),
+    (0, r"\braid(?:s|ed)?\s+(?:on\s+)?(?:a\s+)?(?:fake|counterfeit|duplicate|spurious)\b"),
     (+1, r"\b(?:recover|rebound|bounce)\w*\b[^.,;]{0,25}?\b(?:52|fifty-two)[- ]week low"),
     (+1, r"\b(?:profit|earnings|revenue|sales|income|ebitda|margin|pat)s?\b[^.,;]{0,25}?\b" + _UP + r"\b"),
     (-1, r"\b(?:profit|earnings|revenue|sales|income|ebitda|margin|pat)s?\b[^.,;]{0,25}?\b" + _DOWN + r"\b"),
@@ -121,14 +124,14 @@ SENTIMENT = [
     (+2, r"\b(?:USFDA|FDA|DCGI|EU|CDSCO|regulatory)\b[^.,;]{0,25}?\bapprov|\bapproved in the U\.?S\.?|\bgets? (?:nod|approval|clearance)\b|\bVAI\b"),
     (+1, r"\brecord (?:high|profits?|revenues?|sales|quarter|volumes?|deliveries|orders?|order book)\b|\b(?:52|fifty-two)[- ]week high\b|\ball[- ]time high\b|\blifetime high\b"),
     (+1, r"\bturnaround\b|\bstrong (?:quarter|results|numbers|growth|show|demand)\b|\brobust\b|\bupbeat\b|\bbullish\b"),
-    (+1, r"\brall(?:y|ies|ied)\b|\bsoars?\b|\bzooms?\b|\bskyrockets?\b|\bupper circuit\b|\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:jump|surge|gain|climb|rise|rose|advance)(?:s|ed|d)?\b|\b(?:jump|surge|gain|climb|rise|rally|zoom|soar|advance)(?:s|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
+    (+1, r"\brall(?:y|ies|ied)\b|\blead(?:s)? (?:the )?gains\b|\bsoars?\b|\bzooms?\b|\bskyrockets?\b|\bupper circuit\b|\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:jump|surge|gain|climb|rise|rose|advance)(?:s|ed|d)?\b|\b(?:jump|surge|gain|climb|rise|rally|zoom|soar|advance)(?:s|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
     (-1, r"\b(?:shares?|stock|scrip)\b[^.,;]{0,15}?\b(?:slip|fall|fell|drop|decline|slide|dip|tumble)(?:s|ped|ed|d|en)?\b|\b(?:slip|fall|drop|decline|slide|dip|tumble|crack|plunge|slump)(?:s|ped|ed|d)?\s+(?:over\s+|nearly\s+|up to\s+)?\d+(?:\.\d+)?\s?%"),
     (+1, r"\bbuyback\b|\bbonus (?:issue|shares)\b|\bspecial dividend\b|\bdebt[- ]free\b|\brating upgrade\b"),
     # negative
     (-2, r"\bmiss(?:es|ed)? (?:estimates|expectations|street|forecasts?)\b|\bbelow (?:estimates|expectations)\b|\bworse[- ]than[- ]expected\b|\bdisappoint"),
     (-2, r"\bdowngrade[sd]?\b|\brating (?:cut|downgrade)\b"),
     (-1, r"\b(?:sell|underperform|underweight|reduce) (?:rating|call)\b|\brate[sd]? (?:sell|underperform)\b"),
-    (-2, r"\bfraud\b|\braid(?:s|ed)?\b|\bprobe\b|\binvestigation\b|\bshow[- ]cause\b|\bpenalt(?:y|ies)\b|\bfined?\b|\bSEBI (?:order|bars|ban)"),
+    (-2, r"\bfraud\b|\braid(?:s|ed)?\b|\bprobe\b|\binvestigation\b|\bshow[- ]cause\b|\bpenalt(?:y|ies)\b|\bfined\b|\bfines?\s+(?:of|worth)\b|\b(?:imposes?|levie[sd]|slaps?)\s+(?:a\s+)?fine\b|\bSEBI (?:order|bars|ban)"),
     (-2, r"\bwarning letter\b|\bimport alert\b|\bOAI\b|\brecall(?:s|ed)?\b|\bdefault(?:s|ed)?\b|\binsolvency\b|\bbankrupt"),
     (-1, r"\b(?:52|fifty-two)[- ]week low\b|\blower circuit\b|\bASM\b|\bGSM\b|\bF&O ban\b"),
     (-1, r"\b(?:hits?|dents?|hurts?|squeezes?)\s+(?:profit|profitability|margins?|earnings|bottom line)\b"),
@@ -394,7 +397,10 @@ ALIASES = {
 NOT_THIS = {
     "ITC": r"ITC Hotels", "M&M": r"Mahindra (?:&|and) Mahindra Financial(?: Services)?|M&M Financial|M&M Fin\w*|Mahindra Finance|Mahindra Lifespace|Mahindra Holidays|Tech Mahindra", "SBIN": r"SBI Life|SBI Card|SBI Mutual|SBI MF",
     "HDFCBANK": r"HDFC Life|HDFC AMC|HDFC Securities", "RELIANCE": r"Reliance (?:Power|Infra|Capital|Home|Communications)|Reliance Jio Platforms IPO",
-    "BAJFINANCE": r"Bajaj Finserv", "TATASTEEL": r"Tata Steel Long", "LT": r"L&T (?:Finance|Technology|Tech|Mindtree)|LTIMindtree",
+    "BAJFINANCE": r"Bajaj Finserv",
+    # BSE the exchange (IPO status, fines it imposes) is not BSE Ltd the stock
+    "BSE": r"\bBSE\b(?!\s+(?:Ltd|Limited|shares?|stock|Q\d))",
+    "TRENT": r"Trent (?:McDuffie|Alexander-Arnold|Alexander|Boult|Williams|Richardson|Sherfield|Brown|Bridge)", "TATASTEEL": r"Tata Steel Long", "LT": r"L&T (?:Finance|Technology|Tech|Mindtree)|LTIMindtree",
 }
 # The first word alone is too common to identify a company.
 _GENERIC = {"tata", "adani", "bajaj", "hdfc", "sbi", "bharat", "hindustan", "state", "power", "coal", "asian",
