@@ -264,7 +264,8 @@ def main(argv=None):
     ap.add_argument("--watchlist")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--tf", default="15", choices=list(TF), help="candle timeframe (default 15 minutes)")
-    ap.add_argument("--recent", type=int, default=25, help="report marks/signals from the last N candles (default 25)")
+    ap.add_argument("--recent", type=int, default=None, help="report marks/signals from the last N candles (default 25, 2 with --early)")
+    ap.add_argument("--early", action="store_true", help="flag the BOS on the breakout candle itself (no follow-through wait; = --confirm 0 --recent 2)")
     g = ap.add_argument_group("structure (Pine defaults)")
     g.add_argument("--swing", type=int, default=12, help="pivot bars each side (12)")
     g.add_argument("--confirm-by", choices=["close", "wick"], default="close")
@@ -294,6 +295,10 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
+    if a.early:
+        a.confirm = 0
+    if a.recent is None:
+        a.recent = 2 if a.early else 25
 
     progress = (lambda m: None) if a.quiet else (lambda m: print(m, file=sys.stderr))
     now = S.parse_now(a.now)
@@ -334,8 +339,9 @@ def main(argv=None):
             r["symbol"], m["kind"], fmt(m["level"]), stamp(s, m["break_bar"], a.tf),
             stamp(s, m["confirm_bar"], a.tf), fmt(r["price"]))
 
-    lines = ["BOS / CHoCH scan (%s), %s candles, %s, last %d candles, completed candles only." % (
-                 "Zerodha Kite" if source == "kite" else "Yahoo", tfname, now.strftime("%a %d-%b-%Y %H:%M IST"), a.recent),
+    lines = ["BOS / CHoCH scan (%s), %s candles, %s, last %d candles, completed candles only%s." % (
+                 "Zerodha Kite" if source == "kite" else "Yahoo", tfname, now.strftime("%a %d-%b-%Y %H:%M IST"), a.recent,
+                 ", EARLY: on the breakout candle, no follow-through check (more false breaks)" if a.confirm == 0 else ""),
              "%d requested, %d scanned, %d failed, %d too little data; %d new BUY and %d new SELL signals (%d older still open), %d bullish and %d bearish marks." % (
                  len(symbols), len(rows), len(failed), len(thin), len(buys), len(sells), len(older), len(bull), len(bear))]
     for title, rs, fn in (("BUY signals, last %d candles" % a.recent, buys, sig_line),
