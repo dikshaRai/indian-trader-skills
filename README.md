@@ -1,6 +1,6 @@
 # Indian Trader Skills for Claude
 
-Three Claude Code skills for the Indian stock market (NSE), written with
+Four Claude Code skills for the Indian stock market (NSE), written with
 Claude. Standard-library Python 3, nothing to `pip install`.
 
 | Skill | What it does |
@@ -8,6 +8,7 @@ Claude. Standard-library Python 3, nothing to `pip install`.
 | [`trader-news-india`](skills/trader-news-india/SKILL.md) | NSE corporate filings, Indian news headlines (Google News India) and the % move vs previous close, for your stocks or a whole index. Shows only what is new, in IST, tags each item, flags market-moving filings with `!`, and scores **sentiment** (▲ positive / ▼ negative / · neutral, with the reason) plus a per-stock sentiment table. A **relevance filter** keeps only headlines that name the company and drops market roundups. |
 | [`trader-day-india`](skills/trader-day-india/SKILL.md) | **The trading-day agent.** One command runs the routine: pre-market brief, opening-range scan + news on every hit (holding break + agreeing news first), or evening filings. Claude reviews the results, fixes wrong sentiment labels, reads important filing PDFs and writes a short brief. Can run on Claude's scheduled tasks. |
 | [`trader-scanner-india`](skills/trader-scanner-india/SKILL.md) | Chart scanner: daily setups (20-day breakout/breakdown, bull flag, reclaim/lost 20-day average, oversold, oversold bounce, overbought) and intraday opening-range breakouts up and down from 9:15 IST. Data from **Zerodha Kite Connect** (after the daily login) or free Yahoo data. Writes `trader/watchlist.json`, which the news skill reads. |
+| [`trader-bos-india`](skills/trader-bos-india/SKILL.md) | BOS / CHoCH market-structure scanner, a port of the Gold Navigator Pine script: which Nifty 50 / Next 50 stocks broke structure and which gave a **BUY BOS** (or SELL) signal, with entry, stop at the breakout candle low/high, 2R target and SL/TP status. 15-minute candles by default (5, 30, 60 min or daily). |
 
 Both are education and tooling, not financial advice. Neither places,
 sizes or suggests orders.
