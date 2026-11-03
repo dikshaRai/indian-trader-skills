@@ -9,7 +9,7 @@ description: >-
   Nifty 50 + Nifty Next 50 by default on 15-minute candles (5, 30, 60
   minute or daily on request), Zerodha Kite data or Yahoo. Use when the
   user says "BOS scan", "which stocks gave BOS", "buy BOS signal", "CHoCH",
-  "market structure break", "structure scan Nifty", "BOS on the breakout candle", or /trader-bos-india.
+  "market structure break", "structure scan Nifty", "BOS on the breakout candle", "regime breakout", "range breakout", or /trader-bos-india.
 argument-hint: "[--index NIFTY50 NIFTYNEXT50] [--tf 15] [--recent 25]"
 ---
 
@@ -26,6 +26,7 @@ python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --symbols RELIANCE,ITC --tf 60
 python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --tf D --swing 5              # daily structure
 python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --no-sell --recent 10         # BUY only, last 10 candles
 python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --early                       # BOS on the breakout candle, last 2 candles
+python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --regime-only --recent 4      # range breakouts out of regime zones
 ```
 
 **Early mode** (`--early`, = `--confirm 0 --recent 2`): flags the BOS as
@@ -61,9 +62,27 @@ on daily: 12 daily bars each side finds very few pivots).
 SELL is the mirror image (`--no-sell` hides it). The Pine target is in
 dollars for gold; for stocks it is 2 R by default (or `--tp-pct`).
 
-**Not ported:** the Regime-zone filter (block signals inside a sideways /
-choppy zone). Say so in every brief; the user can check the zone on the
-TradingView chart.
+## Regime zones and range breakouts
+
+`regime.py` ports the Pine script's Regime Engine (`f_regime`, same
+defaults) and runs it on the scan candles (15 min by default, the Pine
+default regime timeframe). It finds **SIDEWAYS / CHOPPY / CONSOLIDATION**
+zones (12-bar range under 3.5 base ATR, 3+ midline crosses, low drift, not
+trending by ER / R2) and reports:
+
+- **Range Breakout / Range Breakdown**: a candle closed out of the zone by
+  0.1 base ATR (or a strong trend carried it past the edge). Shown with the
+  zone, its type and start, the break close and the distance from the edge
+  now. Reported on the break candle itself (the Pine label appears one
+  candle later). Tags `range_breakout` / `range_breakdown`.
+- **Regime now** per stock (zone type or TRENDING UP / DOWN) and a count.
+- **Filter**: as in Pine, BUY/SELL signals are blocked while a zone was
+  active on the previous candle. `--no-regime-block` allows them.
+- `--regime-only`: only zones and range breakouts. With `--symbols` the
+  current zones are listed too.
+
+Use for "regime breakout", "range breakout", "which stocks broke out of
+consolidation / sideways", "regime scan".
 
 Only completed candles are used, so marks do not repaint. Small
 differences from TradingView are possible (pivot ties, ADX warm-up, data
@@ -88,7 +107,8 @@ vendor); if a mark disagrees with the chart, the chart wins.
    and over 3 % (wide stop).
 3. Signals already resolved today (TP hit / SL hit).
 4. Bullish and bearish marks without a signal, briefly.
-5. Risks: regime filter not applied, F&O ban / ASM not checked, results
+5. Range breakouts / breakdowns, most traded first.
+6. Risks: F&O ban / ASM not checked, results
    or record dates (offer `/trader-news-india` on the hits).
-6. End: "Charts that matched the rule, not a list of stocks to buy. Place
+7. End: "Charts that matched the rule, not a list of stocks to buy. Place
    orders yourself in Kite."

@@ -23,8 +23,11 @@ Same rules as the Pine script (defaults match its inputs):
               until SL or TP (SL first when both hit in one candle)
   SELL signal mirror image
 
-Not ported: the Regime zone filter ("block signals while a sideways zone is
-active"). Every signal here is unfiltered by regime; the output says so.
+Regime (regime.py, port of f_regime): sideways / choppy / consolidation
+zones on the scan candles. As in the Pine script, BUY/SELL signals are
+blocked while a zone was active on the previous candle (--no-regime-block
+turns that off), and a candle closing out of a zone is a Range Breakout /
+Range Breakdown.
 
 Data: Zerodha Kite when today's token exists (see trader-scanner-india),
 otherwise Yahoo. Only completed candles are used (the forming one is
@@ -42,7 +45,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "trader-scanner-india"))
+sys.path.insert(0, HERE)
 import scan_india as S  # noqa: E402  (index lists, Yahoo, Kite source picking)
+import regime as R  # noqa: E402
 
 TF = {  # --tf -> (Kite interval, Yahoo interval, Yahoo range, minutes per bar, calendar days to fetch)
     "5": ("5minute", "5m", "30d", 5, 20),
@@ -114,6 +119,7 @@ def structure(s, p):
               trend=0, protH=None, protHBar=None, protL=None, protLBar=None, lastMark=None,
               pend=0, pendLvl=None, pendFrom=None, pendBar=None, pendSwing=False, pendHi=None, pendLo=None)
     marks, signals, trade = [], [], None
+    rg = R.regime(s)
 
     for i in range(n):
         if i in ph:
@@ -178,7 +184,8 @@ def structure(s, p):
             if hit_sl or hit_tp:
                 trade.update(status="SL hit" if hit_sl else "TP hit", exit_bar=i)
         flat = not p.one_at_a_time or not trade or trade["status"] != "open"
-        if sig and flat:
+        in_zone = p.regime_block and i > 0 and rg["active"][i - 1]
+        if sig and flat and not in_zone:
             d, choch, stop = sig
             want = (d == 1 and p.longs) or (d == -1 and p.shorts)
             want = want and (p.on_choch if choch else p.on_bos)
@@ -189,7 +196,7 @@ def structure(s, p):
                 trade = {"dir": d, "kind": "CHoCH" if choch else "BOS", "bar": i, "entry": entry, "sl": stop,
                          "tp": entry + move if d == 1 else entry - move, "risk": risk, "status": "open"}
                 signals.append(trade)
-    return marks, signals, st["trend"]
+    return marks, signals, st["trend"], rg
 
 
 # ---------------------------------------------------------------- data
@@ -239,17 +246,20 @@ def scan(a, now, symbols, progress):
             if sym not in failed:
                 thin.append(sym)
             continue
-        marks, signals, trend = structure(s, a)
+        marks, signals, trend, rg = structure(s, a)
         last = len(s["c"]) - 1
         price = s["c"][-1]
         recent = [m for m in marks if last - m["confirm_bar"] < a.recent]
+        rbreaks = [b for b in rg["breaks"] if last - b["bar"] < a.recent]
+        zone = R.NAMES[rg["kind"][last]] if rg["active"][last] else ("TRENDING UP" if rg["trend_up"][last] else "TRENDING DOWN")
         sig = signals[-1] if signals else None
         if sig and (last - sig["bar"] >= a.recent and sig["status"] != "open"):
             sig = None
         rows.append({"symbol": sym, "price": price, "trend": trend, "marks": recent, "signal": sig,
                      "new": bool(sig) and last - sig["bar"] < a.recent,
                      "turnover_cr": sum(s["c"][k] * (s["v"][k] or 0) for k in range(max(0, last - 24), last + 1)) / S.CRORE,
-                     "series": s, "last": last})
+                     "series": s, "last": last, "rbreaks": rbreaks, "zone": zone,
+                     "zone_box": (rg["bot"][last], rg["top"][last]) if rg["active"][last] else None})
     return source, rows, failed, thin
 
 
@@ -284,6 +294,9 @@ def main(argv=None):
     g.add_argument("--tp-pct", type=float, default=0.0, help="target as %% of entry instead of R")
     g.add_argument("--sl-buffer", type=float, default=0.0, help="rupees beyond the breakout candle")
     g.add_argument("--max-risk-pct", type=float, default=0.0, help="skip if the stop is more than N %% away (0 = off)")
+    g.add_argument("--no-regime-block", dest="regime_block", action="store_false",
+                   help="allow signals inside a sideways/choppy/consolidation zone")
+    ap.add_argument("--regime-only", action="store_true", help="report only regime zones and range breakouts")
     g.add_argument("--many", dest="one_at_a_time", action="store_false", help="allow a new signal while one is open")
     ap.add_argument("--min-price", type=float, default=20.0)
     ap.add_argument("--source", choices=["auto", "kite", "yahoo"], default="auto")
@@ -324,6 +337,23 @@ def main(argv=None):
     bull = [r for r in rows if any(m["dir"] == 1 for m in r["marks"])]
     bear = [r for r in rows if any(m["dir"] == -1 for m in r["marks"])]
     order = lambda rs: sorted(rs, key=lambda r: -r["turnover_cr"])
+    rb_up = [r for r in rows if any(b["dir"] == 1 for b in r["rbreaks"])]
+    rb_dn = [r for r in rows if any(b["dir"] == -1 for b in r["rbreaks"])]
+    zoned = [r for r in rows if r["zone_box"]]
+    if a.regime_only:
+        buys = sells = older = bull = bear = []
+
+    def rb_line(r, d):
+        b = [x for x in r["rbreaks"] if x["dir"] == d][-1]
+        s = r["series"]
+        edge = b["top"] if d == 1 else b["bot"]
+        return "  %-11s %s zone %s-%s (from %s)  broke %s close %s  now %s (%+.2f%% from edge)" % (
+            r["symbol"], R.NAMES[b["kind"]], fmt(b["bot"]), fmt(b["top"]), stamp(s, b["start_bar"], a.tf),
+            stamp(s, b["bar"], a.tf), fmt(s["c"][b["bar"]]), fmt(r["price"]), (r["price"] - edge) / edge * 100)
+
+    def zone_line(r):
+        lo, hi = r["zone_box"]
+        return "  %-11s %-13s %s-%s  now %s" % (r["symbol"], r["zone"], fmt(lo), fmt(hi), fmt(r["price"]))
 
     def sig_line(r):
         g, s = r["signal"], r["series"]
@@ -342,8 +372,13 @@ def main(argv=None):
     lines = ["BOS / CHoCH scan (%s), %s candles, %s, last %d candles, completed candles only%s." % (
                  "Zerodha Kite" if source == "kite" else "Yahoo", tfname, now.strftime("%a %d-%b-%Y %H:%M IST"), a.recent,
                  ", EARLY: on the breakout candle, no follow-through check (more false breaks)" if a.confirm == 0 else ""),
-             "%d requested, %d scanned, %d failed, %d too little data; %d new BUY and %d new SELL signals (%d older still open), %d bullish and %d bearish marks." % (
-                 len(symbols), len(rows), len(failed), len(thin), len(buys), len(sells), len(older), len(bull), len(bear))]
+             "%d requested, %d scanned, %d failed, %d too little data; %d new BUY and %d new SELL signals (%d older still open), %d bullish and %d bearish marks; %d range breakouts, %d breakdowns, %d in a zone now." % (
+                 len(symbols), len(rows), len(failed), len(thin), len(buys), len(sells), len(older), len(bull), len(bear),
+                 len(rb_up), len(rb_dn), len(zoned))]
+    for title, rs, d in (("Range Breakout (closed above a regime zone), last %d candles" % a.recent, rb_up, 1),
+                         ("Range Breakdown (closed below a regime zone), last %d candles" % a.recent, rb_dn, -1)):
+        if rs:
+            lines += ["", "%s (%d)" % (title, len(rs))] + [rb_line(r, d) for r in order(rs)]
     for title, rs, fn in (("BUY signals, last %d candles" % a.recent, buys, sig_line),
                           ("SELL signals, last %d candles" % a.recent, sells, sig_line),
                           ("Older signals still open", older, sig_line)):
@@ -354,17 +389,23 @@ def main(argv=None):
             lines += ["", "%s (%d)" % (title, len(rs))] + [mark_line(r, d) for r in order(rs)]
     up = sum(r["trend"] == 1 for r in rows)
     dn = sum(r["trend"] == -1 for r in rows)
-    lines += ["", "Structure now: %d bullish, %d bearish, %d not set." % (up, dn, len(rows) - up - dn)]
-    notes.append("Regime-zone filter of the Pine script is not applied: signals are unfiltered by sideways/choppy zones.")
+    if zoned and (a.regime_only or a.symbols):
+        lines += ["", "In a regime zone now (%d)" % len(zoned)] + [zone_line(r) for r in order(zoned)]
+    lines += ["", "Structure now: %d bullish, %d bearish, %d not set. Regime now: %d sideways, %d choppy, %d consolidation, %d trending." % (
+        up, dn, len(rows) - up - dn, sum(r["zone"] == "SIDEWAYS" for r in rows), sum(r["zone"] == "CHOPPY" for r in rows),
+        sum(r["zone"] == "CONSOLIDATION" for r in rows), sum(r["zone"].startswith("TRENDING") for r in rows))]
+    notes.append("Regime filter %s: signals inside a sideways/choppy/consolidation zone are %s." % (
+        "on" if a.regime_block else "off", "blocked" if a.regime_block else "allowed"))
 
     hits = []
     for r in rows:
         tags = ["%s_%s" % (m["kind"].lower(), "up" if m["dir"] == 1 else "down") for m in r["marks"]]
+        tags += ["range_breakout" if b["dir"] == 1 else "range_breakdown" for b in r["rbreaks"]]
         if r["signal"]:
             tags.append("buy_signal" if r["signal"]["dir"] == 1 else "sell_signal")
         if tags:
             g = r["signal"]
-            hits.append({"symbol": r["symbol"], "setups": sorted(set(tags)), "price": round(r["price"], 2),
+            hits.append({"symbol": r["symbol"], "setups": sorted(set(tags)), "price": round(r["price"], 2), "regime": r["zone"],
                          "signal": None if not g else {k: (round(v, 2) if isinstance(v, float) else v)
                                                         for k, v in g.items() if k not in ("bar", "exit_bar")}})
     doc = {"mode": "bos", "timeframe": a.tf, "as_of": now.isoformat(), "market": "NSE", "universe": " ".join(a.index),
