@@ -1,6 +1,6 @@
 # Indian Trader Skills for Claude
 
-Four Claude Code skills for the Indian stock market (NSE), written with
+Five Claude Code skills for the Indian stock market (NSE), written with
 Claude. Standard-library Python 3, nothing to `pip install`.
 
 | Skill | What it does |
@@ -9,6 +9,7 @@ Claude. Standard-library Python 3, nothing to `pip install`.
 | [`trader-day-india`](skills/trader-day-india/SKILL.md) | **The trading-day agent.** One command runs the routine: pre-market brief, opening-range scan + news on every hit (holding break + agreeing news first), or evening filings. Claude reviews the results, fixes wrong sentiment labels, reads important filing PDFs and writes a short brief. Can run on Claude's scheduled tasks. |
 | [`trader-scanner-india`](skills/trader-scanner-india/SKILL.md) | Chart scanner: daily setups (20-day breakout/breakdown, bull flag, reclaim/lost 20-day average, oversold, oversold bounce, overbought) and intraday opening-range breakouts up and down from 9:15 IST. Data from **Zerodha Kite Connect** (after the daily login) or free Yahoo data. Writes `trader/watchlist.json`, which the news skill reads. |
 | [`trader-bos-india`](skills/trader-bos-india/SKILL.md) | BOS / CHoCH market-structure scanner, a port of the Gold Navigator Pine script: which Nifty 50 / Next 50 stocks broke structure and which gave a **BUY BOS** (or SELL) signal, with entry, stop at the breakout candle low/high, 2R target and SL/TP status, plus regime zones (sideways / choppy / consolidation) and range breakouts, and an `--early` mode that flags the BOS on the breakout candle. 15-minute candles by default (5, 30, 60 min or daily). |
+| [`trader-geo-india`](skills/trader-geo-india/SKILL.md) | **Geopolitics and global macro** for the Indian market: crude / Middle East, India-Pakistan, India-China, US tariffs and H-1B, Russia sanctions, Fed and dollar, Red Sea shipping, China economy. Market gauges (Brent, gold, USD/INR, dollar index, US 10y, India VIX, Nifty sectors, US and Asian indices) with big-move flags and the Indian sectors and stocks usually exposed. |
 
 Both are education and tooling, not financial advice. Neither places,
 sizes or suggests orders.

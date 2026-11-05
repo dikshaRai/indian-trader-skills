@@ -27,6 +27,7 @@ python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --tf D --swing 5              # da
 python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --no-sell --recent 10         # BUY only, last 10 candles
 python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --early                       # BOS on the breakout candle, last 2 candles
 python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --regime-only --recent 4      # range breakouts out of regime zones
+python3 -I "${CLAUDE_SKILL_DIR}/bos_india.py" --regime-tf 240               # 4 h regime filtering 15 min BOS
 ```
 
 **Early mode** (`--early`, = `--confirm 0 --recent 2`): flags the BOS as
@@ -78,6 +79,13 @@ trending by ER / R2) and reports:
 - **Regime now** per stock (zone type or TRENDING UP / DOWN) and a count.
 - **Filter**: as in Pine, BUY/SELL signals are blocked while a zone was
   active on the previous candle. `--no-regime-block` allows them.
+- **`--regime-tf`** picks the regime timeframe, like the Pine "Regime
+  timeframe" input: `5 15 30 60 120 240 D` (default = `--tf`). 2 h and 4 h
+  are built from hourly candles starting 9:15. Each scan candle uses the
+  last regime candle that closed before it opened (no repaint), so a 4 h
+  zone filters 15-minute signals the way your chart does. Map "1 hour
+  regime" -> `60`, "4 hour" -> `240`, "daily" -> `D`. A higher regime
+  timeframe fetches a second set of candles (Nifty 100 on Kite: ~+40 s).
 - `--regime-only`: only zones and range breakouts. With `--symbols` the
   current zones are listed too.
 

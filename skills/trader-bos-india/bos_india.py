@@ -56,6 +56,7 @@ TF = {  # --tf -> (Kite interval, Yahoo interval, Yahoo range, minutes per bar, 
     "60": ("60minute", "60m", "180d", 60, 150),
     "D": ("day", "1d", "2y", 375, 700),
 }
+RG_TF = list(TF)[:4] + ["120", "240", "D"]  # 120 / 240 are built from 60-minute candles
 
 
 # ---------------------------------------------------------------- indicators
@@ -108,7 +109,7 @@ def pivots(xs, k, high):
 
 # ---------------------------------------------------------------- the engine
 
-def structure(s, p):
+def structure(s, p, zone=None):
     """Replay the Pine BOS/CHoCH state machine. Returns (marks, signals, trend)."""
     o, h, l, c, t = s["o"], s["h"], s["l"], s["c"], s["t"]
     n = len(c)
@@ -119,7 +120,9 @@ def structure(s, p):
               trend=0, protH=None, protHBar=None, protL=None, protLBar=None, lastMark=None,
               pend=0, pendLvl=None, pendFrom=None, pendBar=None, pendSwing=False, pendHi=None, pendLo=None)
     marks, signals, trade = [], [], None
-    rg = R.regime(s)
+    rg = R.regime(s) if zone is None else None
+    if zone is None:  # same timeframe: the zone as of the previous closed candle
+        zone = [False] + rg["active"][:-1]
 
     for i in range(n):
         if i in ph:
@@ -184,7 +187,7 @@ def structure(s, p):
             if hit_sl or hit_tp:
                 trade.update(status="SL hit" if hit_sl else "TP hit", exit_bar=i)
         flat = not p.one_at_a_time or not trade or trade["status"] != "open"
-        in_zone = p.regime_block and i > 0 and rg["active"][i - 1]
+        in_zone = p.regime_block and zone[i]
         if sig and flat and not in_zone:
             d, choch, stop = sig
             want = (d == 1 and p.longs) or (d == -1 and p.shorts)
@@ -211,8 +214,36 @@ def completed(s, minutes, now):
     return {key: [s[key][k] for k in keep] for key in ("t", "o", "h", "l", "c", "v")}
 
 
-def fetch(a, now, symbols, progress):
-    kite_iv, y_iv, y_rng, minutes, days = TF[a.tf]
+def resample(s, hours):
+    """60-minute candles -> 2 h / 4 h candles from 9:15 each day (TradingView's NSE sessions)."""
+    out = {k: [] for k in ("t", "o", "h", "l", "c", "v")}
+    key = None
+    for k in range(len(s["t"])):
+        d = S.ist(s["t"][k])
+        g = (d.date(), ((d.hour * 60 + d.minute) - 555) // (60 * hours))
+        if g != key:
+            key = g
+            for f in ("t", "o", "h", "l", "c"):
+                out[f].append(s[f][k])
+            out["v"].append(s["v"][k] or 0)
+        else:
+            out["h"][-1] = max(out["h"][-1], s["h"][k])
+            out["l"][-1] = min(out["l"][-1], s["l"][k])
+            out["c"][-1] = s["c"][k]
+            out["v"][-1] += s["v"][k] or 0
+    return out
+
+
+def bar_end(t, minutes):
+    d = S.ist(t)
+    if minutes >= 375:
+        return d.replace(hour=15, minute=30, second=0, microsecond=0)
+    return min(d + _dt.timedelta(minutes=minutes), d.replace(hour=15, minute=30, second=0, microsecond=0))
+
+
+def fetch(a, now, symbols, progress, tf=None):
+    tf = tf or a.tf
+    kite_iv, y_iv, y_rng, minutes, days = TF[tf]
     source, kite = a.source_pick
     if source == "kite":
         data, failed = S.kite_fetch(kite, symbols, kite_iv, now - _dt.timedelta(days=days), now, progress)
@@ -239,6 +270,18 @@ def stamp(s, i, tf):
 
 def scan(a, now, symbols, progress):
     source, data, failed = fetch(a, now, symbols, progress)
+    rdata, rmin = data, TF[a.tf][3]
+    if a.regime_tf != a.tf:
+        base = "60" if a.regime_tf in ("120", "240") else a.regime_tf
+        progress("Regime candles (%s)..." % a.regime_tf)
+        _, rdata, _ = fetch(a, now, symbols, progress, base)
+        if base != a.regime_tf:
+            hrs = int(a.regime_tf) // 60
+            rdata = {k: resample(v, hrs) for k, v in rdata.items()}
+            # drop a 2 h / 4 h candle that is still forming
+            rdata = {k: {f: v[f][:len([t for t in v["t"] if bar_end(t, int(a.regime_tf)) <= now])] for f in v}
+                     for k, v in rdata.items()}
+        rmin = TF[base][3] if base == a.regime_tf else int(a.regime_tf)
     rows, thin = [], []
     for sym in symbols:
         s = data.get(sym)
@@ -246,20 +289,40 @@ def scan(a, now, symbols, progress):
             if sym not in failed:
                 thin.append(sym)
             continue
-        marks, signals, trend, rg = structure(s, a)
+        rs = rdata.get(sym) if rdata is not data else s
+        if not rs or len(rs["c"]) < 60:
+            rs = None
+        rg = R.regime(rs) if rs else None
+        zmap = None
+        if rs and rs is not s:
+            # each scan candle sees the regime of the last regime candle closed before it opened (no repaint)
+            ends, j, zmap = [bar_end(t, rmin) for t in rs["t"]], -1, []
+            for t in s["t"]:
+                st = S.ist(t)
+                while j + 1 < len(ends) and ends[j + 1] <= st:
+                    j += 1
+                zmap.append(j >= 0 and rg["active"][j])
+        elif not rs:
+            zmap = [False] * len(s["c"])
+        marks, signals, trend, _ = structure(s, a, zmap)
         last = len(s["c"]) - 1
         price = s["c"][-1]
         recent = [m for m in marks if last - m["confirm_bar"] < a.recent]
-        rbreaks = [b for b in rg["breaks"] if last - b["bar"] < a.recent]
-        zone = R.NAMES[rg["kind"][last]] if rg["active"][last] else ("TRENDING UP" if rg["trend_up"][last] else "TRENDING DOWN")
+        if rs:
+            rl = len(rs["c"]) - 1
+            cut = S.ist(s["t"][max(0, last - a.recent + 1)])
+            rbreaks = [b for b in rg["breaks"] if bar_end(rs["t"][b["bar"]], rmin) > cut]
+            zone = R.NAMES[rg["kind"][rl]] if rg["active"][rl] else ("TRENDING UP" if rg["trend_up"][rl] else "TRENDING DOWN")
+            zbox = (rg["bot"][rl], rg["top"][rl]) if rg["active"][rl] else None
+        else:
+            rbreaks, zone, zbox = [], "n/a", None
         sig = signals[-1] if signals else None
         if sig and (last - sig["bar"] >= a.recent and sig["status"] != "open"):
             sig = None
         rows.append({"symbol": sym, "price": price, "trend": trend, "marks": recent, "signal": sig,
                      "new": bool(sig) and last - sig["bar"] < a.recent,
                      "turnover_cr": sum(s["c"][k] * (s["v"][k] or 0) for k in range(max(0, last - 24), last + 1)) / S.CRORE,
-                     "series": s, "last": last, "rbreaks": rbreaks, "zone": zone,
-                     "zone_box": (rg["bot"][last], rg["top"][last]) if rg["active"][last] else None})
+                     "series": s, "last": last, "rbreaks": rbreaks, "zone": zone, "zone_box": zbox, "rseries": rs})
     return source, rows, failed, thin
 
 
@@ -296,6 +359,7 @@ def main(argv=None):
     g.add_argument("--max-risk-pct", type=float, default=0.0, help="skip if the stop is more than N %% away (0 = off)")
     g.add_argument("--no-regime-block", dest="regime_block", action="store_false",
                    help="allow signals inside a sideways/choppy/consolidation zone")
+    ap.add_argument("--regime-tf", choices=RG_TF, help="regime timeframe: 5 15 30 60 120 240 D (default: same as --tf)")
     ap.add_argument("--regime-only", action="store_true", help="report only regime zones and range breakouts")
     g.add_argument("--many", dest="one_at_a_time", action="store_false", help="allow a new signal while one is open")
     ap.add_argument("--min-price", type=float, default=20.0)
@@ -308,6 +372,7 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
+    a.regime_tf = a.regime_tf or a.tf
     if a.early:
         a.confirm = 0
     if a.recent is None:
@@ -345,11 +410,11 @@ def main(argv=None):
 
     def rb_line(r, d):
         b = [x for x in r["rbreaks"] if x["dir"] == d][-1]
-        s = r["series"]
+        rs = r["rseries"]
         edge = b["top"] if d == 1 else b["bot"]
         return "  %-11s %s zone %s-%s (from %s)  broke %s close %s  now %s (%+.2f%% from edge)" % (
-            r["symbol"], R.NAMES[b["kind"]], fmt(b["bot"]), fmt(b["top"]), stamp(s, b["start_bar"], a.tf),
-            stamp(s, b["bar"], a.tf), fmt(s["c"][b["bar"]]), fmt(r["price"]), (r["price"] - edge) / edge * 100)
+            r["symbol"], R.NAMES[b["kind"]], fmt(b["bot"]), fmt(b["top"]), stamp(rs, b["start_bar"], a.regime_tf),
+            stamp(rs, b["bar"], a.regime_tf), fmt(rs["c"][b["bar"]]), fmt(r["price"]), (r["price"] - edge) / edge * 100)
 
     def zone_line(r):
         lo, hi = r["zone_box"]
@@ -371,7 +436,7 @@ def main(argv=None):
 
     lines = ["BOS / CHoCH scan (%s), %s candles, %s, last %d candles, completed candles only%s." % (
                  "Zerodha Kite" if source == "kite" else "Yahoo", tfname, now.strftime("%a %d-%b-%Y %H:%M IST"), a.recent,
-                 ", EARLY: on the breakout candle, no follow-through check (more false breaks)" if a.confirm == 0 else ""),
+                 ", regime on %s" % ("daily" if a.regime_tf == "D" else a.regime_tf + "-minute") + (", EARLY: on the breakout candle, no follow-through check (more false breaks)" if a.confirm == 0 else "")),
              "%d requested, %d scanned, %d failed, %d too little data; %d new BUY and %d new SELL signals (%d older still open), %d bullish and %d bearish marks; %d range breakouts, %d breakdowns, %d in a zone now." % (
                  len(symbols), len(rows), len(failed), len(thin), len(buys), len(sells), len(older), len(bull), len(bear),
                  len(rb_up), len(rb_dn), len(zoned))]
