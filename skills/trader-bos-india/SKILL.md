@@ -105,6 +105,16 @@ Every run (except `--regime-only`) also shows:
   dollar index, US 10y, Nasdaq, Hang Seng, mapped to sectors
   (`+Brent crude down 9.5%` = tailwind for oil marketers, paints,
   aviation; `-Gold up 1.5%` = headwind for jewellers).
+- **FPI sector flows** (needs `trader-news-india` next to this skill;
+  `--no-fpi` skips it): the NSDL fortnightly FPI report, cached a day in
+  `trader/state/fpi_sectors.json`. The ranking shows the top 3 bought and
+  sold sectors; each open signal gets `[FPI BUYING / SELLING / turned
+  buyer / turned seller <sector>: <previous> / <latest fortnight> cr]`
+  (`sectors.py` maps stocks to NSDL sectors). Tested on 9 fortnights:
+  sector prices moved with FPI flows in the same fortnight 82 % of the
+  time but only 56 % in the next two weeks. Use the tag to say whether a
+  signal has foreign money behind it now, never as a forecast. The report
+  lags (period ends 15th / month-end, published days later): say its date.
 - **Warnings on open signals** (`⚠`):
   - `RESULTS DUE <date>` / `RESULTS OUT <date>`: results headline in
     the last 7 days pointing at yesterday to 3 days ahead (`events.py`,

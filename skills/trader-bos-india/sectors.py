@@ -77,3 +77,23 @@ def macro_tilt(gauges):
         for s in hurt:
             tilt.setdefault(s, []).append(("-" if up else "+") + move)
     return tilt
+
+
+# scanner sector -> NSDL fortnightly FPI report sector (NSE industry classification); stock overrides first
+NSDL_SECTOR = {
+    "Banks": "Financial Services", "NBFC": "Financial Services", "Gold finance": "Financial Services",
+    "Insurance & AMC": "Financial Services", "IT": "Information Technology", "Pharma & health": "Healthcare",
+    "Auto": "Automobile and Auto Components", "FMCG": "Fast Moving Consumer Goods",
+    "Jewellery & retail": "Consumer Services", "Paints & chemicals": "Consumer Durables",
+    "Metals": "Metals & Mining", "Cement": "Construction Materials", "Oil marketing": "Oil, Gas & Consumable Fuels",
+    "Oil & gas": "Oil, Gas & Consumable Fuels", "Power": "Power", "Capital goods": "Capital Goods",
+    "Defence": "Capital Goods", "Aviation": "Services", "Ports & logistics": "Services",
+    "Conglomerate": "Metals & Mining", "Telecom": "Telecommunication", "Realty": "Realty",
+}
+NSDL_STOCK = {"TITAN": "Consumer Durables", "PIDILITIND": "Chemicals", "COALINDIA": "Oil, Gas & Consumable Fuels",
+              "LT": "Construction", "VBL": "Fast Moving Consumer Goods", "POLYCAB": "Capital Goods",
+              "GRASIM": "Construction Materials", "DMART": "Consumer Services", "ETERNAL": "Consumer Services"}
+
+
+def nsdl_sector(sym):
+    return NSDL_STOCK.get(sym) or NSDL_SECTOR.get(sector(sym))

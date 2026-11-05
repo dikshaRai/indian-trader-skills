@@ -358,6 +358,34 @@ def macro_gauges(progress):
     return G.collect_gauges([])
 
 
+def fpi_flows(progress, path="trader/state/fpi_sectors.json"):
+    """NSDL fortnightly FPI flows per sector (via trader-news-india/fii_dii.py), cached for a day."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            c = json.load(fh)
+        if (_dt.datetime.now() - _dt.datetime.fromisoformat(c["fetched"])).total_seconds() < 86400:
+            return c
+    except (OSError, ValueError, KeyError):
+        pass
+    try:
+        sys.path.insert(0, os.path.join(HERE, "..", "trader-news-india"))
+        import fii_dii as FD  # noqa: E402
+    except ImportError:
+        return None
+    progress("FPI sector flows (NSDL fortnightly)...")
+    rep = FD.nsdl_sectors([])
+    if not rep:
+        return None
+    c = {"fetched": _dt.datetime.now().isoformat(), "periods": rep["periods"],
+         "sectors": {x["sector"]: [x["net1"], x["net2"]] for x in rep["sectors"]}}
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(c, fh, indent=1)
+    except OSError:
+        pass
+    return c
+
+
 def fmt(x):
     return S.money(x).replace("Rs ", "Rs ")
 
@@ -394,6 +422,7 @@ def main(argv=None):
     ap.add_argument("--regime-tf", choices=RG_TF, help="regime timeframe: 5 15 30 60 120 240 D (default: same as --tf)")
     ap.add_argument("--no-events", action="store_true", help="skip the results-date lookup for signal stocks")
     ap.add_argument("--no-macro", action="store_true", help="skip global gauges in the sector ranking")
+    ap.add_argument("--no-fpi", action="store_true", help="skip the NSDL FPI sector-flow tags")
     ap.add_argument("--runup-pct", type=float, default=5.0, help="flag a 5-session run-up above this %% (5)")
     ap.add_argument("--regime-only", action="store_true", help="report only regime zones and range breakouts")
     g.add_argument("--many", dest="one_at_a_time", action="store_false", help="allow a new signal while one is open")
@@ -444,6 +473,20 @@ def main(argv=None):
     strength = {k: sum(v) / len(v) for k, v in groups.items()}
     gauges = None if (a.no_macro or a.regime_only) else macro_gauges(progress)
     tilt = SEC.macro_tilt(gauges or [])
+    fpi = None if (a.no_fpi or a.regime_only) else fpi_flows(progress)
+
+    def fpi_tag(sym):
+        if not fpi:
+            return ""
+        ns = SEC.nsdl_sector(sym)
+        v = fpi["sectors"].get(ns) if ns else None
+        if not v:
+            return ""
+        last, prev = v[1] or 0, v[0] or 0
+        side = "FPI BUYING" if last > 0 and prev > 0 else "FPI SELLING" if last < 0 and prev < 0 else \
+            "FPI turned buyer" if last > 0 else "FPI turned seller"
+        return "  [%s %s: %s / %s cr]" % (side, ns.split(" and ")[0].split(",")[0], "{:+,.0f}".format(prev),
+                                           "{:+,.0f}".format(last))
     rank = {k: i for i, k in enumerate(sorted(strength, key=lambda k: -strength[k]))}
     order = lambda rs: sorted(rs, key=lambda r: (rank.get(r["sector"], 99) if r["signal"] and r["signal"]["dir"] == 1
                                                  else -rank.get(r["sector"], 0), -r["turnover_cr"]))
@@ -486,11 +529,11 @@ def main(argv=None):
     def sig_line(r):
         g, s = r["signal"], r["series"]
         status = g["status"] + ("" if g["status"] == "open" else " " + stamp(s, g["exit_bar"], a.tf))
-        return "  %-11s %s %-5s %s  @ %s  SL %s  TP %s  risk %.2f%%  now %s  [%s]  %s %s%s" % (
+        return "  %-11s %s %-5s %s  @ %s  SL %s  TP %s  risk %.2f%%  now %s  [%s]  %s %s%s%s" % (
             r["symbol"], "BUY " if g["dir"] == 1 else "SELL", g["kind"], stamp(s, g["bar"], a.tf),
             fmt(g["entry"]), fmt(g["sl"]), fmt(g["tp"]), g["risk"] / g["entry"] * 100, fmt(r["price"]), status,
             r["sector"], "%+.1f%%" % strength[r["sector"]] if r["sector"] in strength else "",
-            warn(r) if g["status"] == "open" else "")
+            fpi_tag(r["symbol"]) if g["status"] == "open" else "", warn(r) if g["status"] == "open" else "")
 
     def mark_line(r, d):
         m = [x for x in r["marks"] if x["dir"] == d][-1]
@@ -519,6 +562,13 @@ def main(argv=None):
             big = [g for g in gauges if g["flag"]]
             lines.append("  global: " + ("; ".join("%s %+.1f%s" % (g["name"], g["change"], g["unit"]) for g in big)
                                          if big else "no big moves in Brent, gold, rupee, dollar, US yields, Nasdaq, Hang Seng"))
+        if fpi:
+            per = [p.replace("Net Investment ", "") for p in fpi["periods"]]
+            fl = sorted(((k, (v[0] or 0) + (v[1] or 0)) for k, v in fpi["sectors"].items() if k not in ("Sovereign", "Others")),
+                        key=lambda kv: -kv[1])
+            lines.append("  FPI flows (NSDL, %s + %s): bought %s; sold %s" % (
+                per[0], per[1], ", ".join("%s %s" % (k.split(" and ")[0].split(",")[0], "{:+,.0f}".format(v)) for k, v in fl[:3]),
+                ", ".join("%s %s" % (k.split(" and ")[0].split(",")[0], "{:+,.0f}".format(v)) for k, v in fl[-3:][::-1])))
         lines.append("  Signals below are sorted strongest sector first (BUY) / weakest first (SELL).")
     for title, rs, fn in (("BUY signals, last %d candles" % a.recent, buys, sig_line),
                           ("SELL signals, last %d candles" % a.recent, sells, sig_line),
@@ -548,7 +598,9 @@ def main(argv=None):
             g = r["signal"]
             ev = results.get(r["symbol"])
             hits.append({"symbol": r["symbol"], "setups": sorted(set(tags)), "price": round(r["price"], 2), "regime": r["zone"],
-                         "sector": r["sector"], "run_5d_pct": None if r["run5"] is None else round(r["run5"], 2),
+                         "sector": r["sector"], "nsdl_sector": SEC.nsdl_sector(r["symbol"]),
+                         "fpi_flow_cr": (fpi or {}).get("sectors", {}).get(SEC.nsdl_sector(r["symbol"]) or ""),
+                         "run_5d_pct": None if r["run5"] is None else round(r["run5"], 2),
                          "results": ev and {"date": ev["date"], "kind": ev["kind"], "headline": ev["title"]},
                          "signal": None if not g else {k: (round(v, 2) if isinstance(v, float) else v)
                                                         for k, v in g.items() if k not in ("bar", "exit_bar")}})
