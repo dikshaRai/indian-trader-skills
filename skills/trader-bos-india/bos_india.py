@@ -48,6 +48,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "trader-scanner-india"))
 sys.path.insert(0, HERE)
 import scan_india as S  # noqa: E402  (index lists, Yahoo, Kite source picking)
 import regime as R  # noqa: E402
+import sectors as SEC  # noqa: E402
+import events as EV  # noqa: E402
 
 TF = {  # --tf -> (Kite interval, Yahoo interval, Yahoo range, minutes per bar, calendar days to fetch)
     "5": ("5minute", "5m", "30d", 5, 20),
@@ -322,8 +324,38 @@ def scan(a, now, symbols, progress):
         rows.append({"symbol": sym, "price": price, "trend": trend, "marks": recent, "signal": sig,
                      "new": bool(sig) and last - sig["bar"] < a.recent,
                      "turnover_cr": sum(s["c"][k] * (s["v"][k] or 0) for k in range(max(0, last - 24), last + 1)) / S.CRORE,
-                     "series": s, "last": last, "rbreaks": rbreaks, "zone": zone, "zone_box": zbox, "rseries": rs})
+                     "series": s, "last": last, "rbreaks": rbreaks, "zone": zone, "zone_box": zbox, "rseries": rs,
+                     "sector": SEC.sector(sym), "day": session_moves(s)[0], "run5": session_moves(s)[1]})
     return source, rows, failed, thin
+
+
+def session_moves(s):
+    """(% vs previous session close, % over the last 5 sessions) from any candle series."""
+    closes, day = [], None
+    for t, c in zip(s["t"], s["c"]):
+        d = S.ist(t).date()
+        if d != day:
+            closes.append(c)
+            day = d
+        else:
+            closes[-1] = c
+    if len(closes) < 2:
+        return None, None
+    base5 = closes[-6] if len(closes) >= 6 else closes[0]
+    return (closes[-1] / closes[-2] - 1) * 100, (closes[-1] / base5 - 1) * 100
+
+
+def macro_gauges(progress):
+    """Global gauges from trader-geo-india (optional skill next to this one)."""
+    try:
+        sys.path.insert(0, os.path.join(HERE, "..", "trader-geo-india"))
+        import geo_india as G  # noqa: E402
+    except ImportError:
+        return None
+    progress("Global gauges (Brent, gold, rupee, dollar, yields)...")
+    keep = {"Brent crude", "Gold", "USD/INR", "Dollar index", "US 10y yield", "Nasdaq", "Hang Seng"}
+    G.GAUGES = [g for g in G.GAUGES if g[0] in keep]
+    return G.collect_gauges([])
 
 
 def fmt(x):
@@ -360,6 +392,9 @@ def main(argv=None):
     g.add_argument("--no-regime-block", dest="regime_block", action="store_false",
                    help="allow signals inside a sideways/choppy/consolidation zone")
     ap.add_argument("--regime-tf", choices=RG_TF, help="regime timeframe: 5 15 30 60 120 240 D (default: same as --tf)")
+    ap.add_argument("--no-events", action="store_true", help="skip the results-date lookup for signal stocks")
+    ap.add_argument("--no-macro", action="store_true", help="skip global gauges in the sector ranking")
+    ap.add_argument("--runup-pct", type=float, default=5.0, help="flag a 5-session run-up above this %% (5)")
     ap.add_argument("--regime-only", action="store_true", help="report only regime zones and range breakouts")
     g.add_argument("--many", dest="one_at_a_time", action="store_false", help="allow a new signal while one is open")
     ap.add_argument("--min-price", type=float, default=20.0)
@@ -401,7 +436,35 @@ def main(argv=None):
     older = [r for r in rows if r["signal"] and not r["new"]]  # still open, from before the window
     bull = [r for r in rows if any(m["dir"] == 1 for m in r["marks"])]
     bear = [r for r in rows if any(m["dir"] == -1 for m in r["marks"])]
-    order = lambda rs: sorted(rs, key=lambda r: -r["turnover_cr"])
+    # sector strength: average move today of each sector's stocks; signals sort strongest sector first
+    groups = {}
+    for r in rows:
+        if r["day"] is not None:
+            groups.setdefault(r["sector"], []).append(r["day"])
+    strength = {k: sum(v) / len(v) for k, v in groups.items()}
+    gauges = None if (a.no_macro or a.regime_only) else macro_gauges(progress)
+    tilt = SEC.macro_tilt(gauges or [])
+    rank = {k: i for i, k in enumerate(sorted(strength, key=lambda k: -strength[k]))}
+    order = lambda rs: sorted(rs, key=lambda r: (rank.get(r["sector"], 99) if r["signal"] and r["signal"]["dir"] == 1
+                                                 else -rank.get(r["sector"], 0), -r["turnover_cr"]))
+    live = [r for r in rows if r["signal"] and r["signal"]["status"] == "open"]
+    results = {} if (a.no_events or not live) else EV.results_dates(
+        [r["symbol"] for r in live], now, "trader/state/results_calendar.json", progress)
+
+    def warn(r):
+        out = []
+        ev = results.get(r["symbol"])
+        if ev:
+            d = _dt.date.fromisoformat(ev["date"]).strftime("%d-%b")
+            out.append("RESULTS %s %s" % ("OUT" if ev["kind"] == "out" else "DUE", d))
+        if r["run5"] is not None and abs(r["run5"]) >= a.runup_pct:
+            out.append("%s %+.1f%% in 5 sessions" % ("RUN-UP" if r["run5"] > 0 else "SELL-OFF", r["run5"]))
+        if ev and ev["kind"] == "due" and r["run5"] is not None and r["run5"] >= a.runup_pct and r["signal"]["dir"] == 1:
+            out.append("PRICED-IN RISK")
+        t = tilt.get(r["sector"])
+        if t:
+            out.append("macro " + ", ".join(t))
+        return ("  ⚠ " + " | ".join(out)) if out else ""
     rb_up = [r for r in rows if any(b["dir"] == 1 for b in r["rbreaks"])]
     rb_dn = [r for r in rows if any(b["dir"] == -1 for b in r["rbreaks"])]
     zoned = [r for r in rows if r["zone_box"]]
@@ -423,9 +486,11 @@ def main(argv=None):
     def sig_line(r):
         g, s = r["signal"], r["series"]
         status = g["status"] + ("" if g["status"] == "open" else " " + stamp(s, g["exit_bar"], a.tf))
-        return "  %-11s %s %-5s %s  @ %s  SL %s  TP %s  risk %.2f%%  now %s  [%s]" % (
+        return "  %-11s %s %-5s %s  @ %s  SL %s  TP %s  risk %.2f%%  now %s  [%s]  %s %s%s" % (
             r["symbol"], "BUY " if g["dir"] == 1 else "SELL", g["kind"], stamp(s, g["bar"], a.tf),
-            fmt(g["entry"]), fmt(g["sl"]), fmt(g["tp"]), g["risk"] / g["entry"] * 100, fmt(r["price"]), status)
+            fmt(g["entry"]), fmt(g["sl"]), fmt(g["tp"]), g["risk"] / g["entry"] * 100, fmt(r["price"]), status,
+            r["sector"], "%+.1f%%" % strength[r["sector"]] if r["sector"] in strength else "",
+            warn(r) if g["status"] == "open" else "")
 
     def mark_line(r, d):
         m = [x for x in r["marks"] if x["dir"] == d][-1]
@@ -444,6 +509,17 @@ def main(argv=None):
                          ("Range Breakdown (closed below a regime zone), last %d candles" % a.recent, rb_dn, -1)):
         if rs:
             lines += ["", "%s (%d)" % (title, len(rs))] + [rb_line(r, d) for r in order(rs)]
+    if strength and not a.regime_only:
+        ranked = sorted(strength, key=lambda k: -strength[k])
+        fmt_s = lambda k: "%s %+.1f%% (%d)%s" % (k, strength[k], len(groups[k]), " [macro %s]" % ", ".join(tilt[k]) if k in tilt else "")
+        lines += ["", "Sector strength today (avg move vs previous close; stock count):",
+                  "  strongest: " + "; ".join(fmt_s(k) for k in ranked[:5]),
+                  "  weakest:   " + "; ".join(fmt_s(k) for k in ranked[-3:][::-1])]
+        if gauges:
+            big = [g for g in gauges if g["flag"]]
+            lines.append("  global: " + ("; ".join("%s %+.1f%s" % (g["name"], g["change"], g["unit"]) for g in big)
+                                         if big else "no big moves in Brent, gold, rupee, dollar, US yields, Nasdaq, Hang Seng"))
+        lines.append("  Signals below are sorted strongest sector first (BUY) / weakest first (SELL).")
     for title, rs, fn in (("BUY signals, last %d candles" % a.recent, buys, sig_line),
                           ("SELL signals, last %d candles" % a.recent, sells, sig_line),
                           ("Older signals still open", older, sig_line)):
@@ -470,7 +546,10 @@ def main(argv=None):
             tags.append("buy_signal" if r["signal"]["dir"] == 1 else "sell_signal")
         if tags:
             g = r["signal"]
+            ev = results.get(r["symbol"])
             hits.append({"symbol": r["symbol"], "setups": sorted(set(tags)), "price": round(r["price"], 2), "regime": r["zone"],
+                         "sector": r["sector"], "run_5d_pct": None if r["run5"] is None else round(r["run5"], 2),
+                         "results": ev and {"date": ev["date"], "kind": ev["kind"], "headline": ev["title"]},
                          "signal": None if not g else {k: (round(v, 2) if isinstance(v, float) else v)
                                                         for k, v in g.items() if k not in ("bar", "exit_bar")}})
     doc = {"mode": "bos", "timeframe": a.tf, "as_of": now.isoformat(), "market": "NSE", "universe": " ".join(a.index),

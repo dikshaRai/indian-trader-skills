@@ -92,6 +92,37 @@ trending by ER / R2) and reports:
 Use for "regime breakout", "range breakout", "which stocks broke out of
 consolidation / sideways", "regime scan".
 
+## Sector strength, macro tilt and pre-results warnings
+
+Every run (except `--regime-only`) also shows:
+
+- **Sector strength today**: average move vs the previous close of each
+  sector's stocks (`sectors.py` maps the Nifty 100), strongest 5 and
+  weakest 3. BUY signals are sorted strongest sector first, SELL weakest
+  first, so stocks riding the day's theme come to the top.
+- **Macro tilt** (needs `trader-geo-india` next to this skill;
+  `--no-macro` skips it, ~10 s): flagged moves in Brent, gold, USD/INR,
+  dollar index, US 10y, Nasdaq, Hang Seng, mapped to sectors
+  (`+Brent crude down 9.5%` = tailwind for oil marketers, paints,
+  aviation; `-Gold up 1.5%` = headwind for jewellers).
+- **Warnings on open signals** (`⚠`):
+  - `RESULTS DUE <date>` / `RESULTS OUT <date>`: results headline in
+    the last 7 days pointing at yesterday to 3 days ahead (`events.py`,
+    Google News, cached 12 h in `trader/state/results_calendar.json`;
+    `--no-events` skips it, ~1 s per signal stock the first time).
+  - `RUN-UP +x% in 5 sessions` (or `SELL-OFF`): at or above
+    `--runup-pct` (5).
+  - `PRICED-IN RISK`: a BUY with results due and a run-up: good news may
+    already be in the price, and the stock can fall on good results
+    (APOLLOHOSP 5-Nov: +10% in the week before, profit +32%, opened up,
+    then -3.8% in the first 15 minutes, stop hit).
+
+In the brief, lead with the sector ranking and global moves, then the BUY
+signals in the strongest sectors. Call out every `PRICED-IN RISK` and
+`RESULTS DUE` signal: a stop does not protect against a results gap.
+The results lookup reads headlines and can miss or misdate a results day;
+say so when it matters, and check NSE's board-meeting notice.
+
 Only completed candles are used, so marks do not repaint. Small
 differences from TradingView are possible (pivot ties, ADX warm-up, data
 vendor); if a mark disagrees with the chart, the chart wins.
@@ -116,6 +147,7 @@ vendor); if a mark disagrees with the chart, the chart wins.
 3. Signals already resolved today (TP hit / SL hit).
 4. Bullish and bearish marks without a signal, briefly.
 5. Range breakouts / breakdowns, most traded first.
+   (Put the sector ranking, global moves and `⚠` warnings first, see above.)
 6. Risks: F&O ban / ASM not checked, results
    or record dates (offer `/trader-news-india` on the hits).
 7. End: "Charts that matched the rule, not a list of stocks to buy. Place

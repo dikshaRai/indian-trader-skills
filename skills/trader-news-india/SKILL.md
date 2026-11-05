@@ -130,6 +130,14 @@ How Claude uses it:
    `--dry-run` leaves the state alone.
 2. Read every `!` filing first (open the PDF), then anything tagged
    results, regulatory, risk, capital or corporate-action, then MOVING tickers.
+   **Results filings**: do not stop at "profit up X %". From the results
+   PDF compare (a) revenue growth with profit growth, (b) other income
+   now vs a year ago (a jump in other income can make profit look better
+   than the business: APOLLOHOSP Q2 FY27 standalone other income 2.4x,
+   profit before tax +24 % but about +12 % without it), (c) one-offs and
+   exceptional items, (d) the margin. Say whether numbers beat or missed
+   estimates only if a named source says so, and note how far the stock
+   ran up before the results (`/trader-bos-india` shows the 5-session move).
 3. Write a short brief per ticker: what happened, source and link, the move,
    and one line on why it matters to the trade (for example "results are
    tomorrow after market hours: the stock can gap at 9:15").
