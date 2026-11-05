@@ -7,7 +7,7 @@ description: >-
   ratings, pledges) and Indian news headlines via Google News India, plus
   how far each stock is from yesterday's close. Shows only what is new since
   the last check, in IST, tags each item and flags market-moving filings.
-  Use when the user says "any news on RELIANCE", "why is TCS moving", "news
+  Also FII / DII flows and F&O positioning (fii_dii.py). Use when the user says "FII DII data", "foreign investors buying", "any news on RELIANCE", "why is TCS moving", "news
   on my watchlist", "NSE announcements", "morning briefing", "pre-market
   news", "check filings", or names NSE symbols and asks about news.
 argument-hint: "[NSE symbols]"
@@ -47,6 +47,56 @@ headlines only for the stocks with a `!` filing or MOVING. Headlines for all
 100 add about 2 more minutes. With more than 20 stocks the price block lists
 only the MOVING ones, biggest first. Other indices (Bank Nifty etc.) are not
 supported; pass their symbols with `--tickers`.
+
+## FII / DII flows (`fii_dii.py`)
+
+Who is buying India: foreign (FII/FPI) and domestic (DII: mutual funds,
+insurers) money, and how FIIs are positioned in index futures.
+
+```bash
+python3 -I "${CLAUDE_SKILL_DIR}/fii_dii.py"            # cash flows, NSDL FPI, F&O positioning, ~5 s
+python3 -I "${CLAUDE_SKILL_DIR}/fii_dii.py" --days 10  # 10 sessions of positioning
+```
+
+Use when the user says "FII", "DII", "FPI", "foreign investors",
+"institutional buying / selling", "FII data", or asks who is driving
+the market.
+
+| part | source | when |
+| --- | --- | --- |
+| cash buy / sell / net, FII and DII (₹ crore) | NSE provisional (`nseindia.com/api/fiidiiTradeReact`) | after ~18:00 IST; only the latest day, so each run stores it in `trader/state/fii_dii.json` and the 5- and 20-day sums build up from there |
+| FPI confirmed equity and debt net | NSDL daily trends | a day after the trade |
+| FII / DII / Pro / Client index futures long vs short, index call and put net | NSE participant-wise open interest (nsearchives) | after ~19:00 IST, history by date |
+| **FPI money by sector**: net buying / selling per sector for the last two fortnights, assets held | NSDL fortnightly sector report (latest one found automatically) | twice a month (15th and month-end, published a few days later) |
+| **Stocks**: bulk and block deals of the day, parties matched to FII (foreign funds and banks) or DII (mutual funds, insurers) by name; net per stock | NSE `bulk.csv`, `block.csv` | after the close |
+
+Deals by same-day proprietary / high-frequency traders (Graviton, HRTI,
+Plutus Wealth...) are tagged `prop` and hidden: they buy and sell the same
+shares the same day. `--all-deals` shows every deal, `--no-sectors`,
+`--no-deals` skip parts. Name matching can miss an institution trading
+through an unfamiliar entity: say so when it matters.
+
+There is no daily stock-by-stock FII / DII split in India: bulk and block
+deals (only large trades) and the quarterly shareholding patterns are the
+public stock-level data. Sector flows are fortnightly.
+
+In the brief:
+1. Cash: FII net and DII net, who absorbed whom (FII selling met by DII
+   buying is the usual Indian pattern); the multi-day sums once history exists.
+2. F&O: FII index futures long % and the change from the previous session
+   (below 30 % = heavily short, above 70 % = heavily long; a jump in longs
+   or short covering after a heavy-short stretch is worth saying);
+   clients (retail) usually hold the opposite side.
+3. Sectors: the top FPI buying and selling sectors for the month and
+   whether the latest fortnight turned (e.g. IT bought in the second half
+   after selling); stocks with FII or DII bulk / block deals.
+4. Link to the day: sector moves and BOS signals in the sectors FIIs are
+   buying (banks, NBFCs on FII buying days), and global cues from
+   `/trader-geo-india`.
+
+This reports positions and flows, never a forecast. The NSE endpoint is an
+internal API that may start blocking scripts: if it fails, say so and use
+NSDL plus the participant OI file.
 
 ## Sources
 
